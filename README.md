@@ -14,9 +14,13 @@ bash ~/mc-server-tool/mc-server-tool_zh.sh
 
 ------------------------------------------------------------------------------------------------------------------------------------
 
-Download Termux on your phone, then enter [`pkg install git -y`], and then choose the download link according to your region. 
+Download Termux on your phone, then enter   [ ` pkg install git -y ` ]  , and then choose the download link according to your region. 
 
-International:`git clone https://gitclone.com/github.com/Wang-Anyi/mc-server-tool.git`
+International:
+
+`git clone https://ghfast.top/https://github.com/Wang-Anyi/mc-server-tool.git`
+
+`https://github.com/Wang-Anyi/mc-server-tool.git`
 
 Then enter:`bash ~/mc-server-tool/mc-server-tool_en.sh`
 
