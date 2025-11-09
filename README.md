@@ -12,7 +12,7 @@ bash ~/mc-server-tool/mc-server-tool_zh.sh
 
 等待一下就可以使用了,下次启动还是这个代码(bash ~/mc-server-tool/mc-server-tool_zh.sh)
 
-
+------------------------------------------------------------------------------------------------------------------------------------
 
 Download Termux on your phone, then enter `pkg install git -y`, and then choose the download link according to your region. 
 
