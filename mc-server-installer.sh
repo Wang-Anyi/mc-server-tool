@@ -948,9 +948,9 @@ install_mc_server() {
 
     # 步骤4：安装OpenJDK
     ((current_step++))
-    echo "步骤 $current_step/$total_steps: 下载并安装OpenJDK 17版本"
-    echo "正在安装OpenJDK 17版本..."
-    for version in 17; do
+    echo "步骤 $current_step/$total_steps: 下载并安装服务器需要的OpenJDK版本"
+    echo "正在安装服务器需要的OpenJDK版本..."
+    for version in 17 21; do
         echo "尝试安装 OpenJDK-$version..."
         pkg install -y openjdk-$version 2>/dev/null && echo "✅ openjdk-$version 安装成功" || echo "❌ openjdk-$version 不可用"
     done
