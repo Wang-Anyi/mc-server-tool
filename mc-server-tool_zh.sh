@@ -51,6 +51,781 @@ create_minecraft_dir() {
     fi
 }
 
+# 修复非正版账号皮肤显示
+fix_skin_display() {
+    clear
+    echo "=================================================="
+    echo "       修复非正版账号皮肤显示"
+    echo "=================================================="
+    echo ""
+    
+    # 查找所有带fabric的文件夹
+    local fabric_folders=()
+    while IFS= read -r -d '' dir; do
+        if [[ "$dir" == *fabric* ]]; then
+            folder_name=$(basename "$dir")
+            fabric_folders+=("$folder_name")
+        fi
+    done < <(find "$MC_DIR" -mindepth 1 -maxdepth 1 -type d -name "*fabric*" -print0 2>/dev/null)
+    
+    if [ ${#fabric_folders[@]} -eq 0 ]; then
+        echo "❌ 没有找到任何Fabric服务器文件夹"
+        echo ""
+        echo "请先安装Fabric服务器"
+        read -p "按回车键返回..."
+        return
+    fi
+    
+    # 构建菜单选项
+    local menu_items=()
+    for ((i=0; i<${#fabric_folders[@]}; i++)); do
+        menu_items+=("$((i+1))" "${fabric_folders[i]}")
+    done
+    
+    local folder_choice=$(dialog \
+        --title "选择Fabric服务器" \
+        --menu "选择要修复皮肤显示的服务器：" \
+        20 60 10 \
+        "${menu_items[@]}" \
+        --stdout)
+    
+    if [ -z "$folder_choice" ]; then
+        return
+    fi
+    
+    local index=$((folder_choice-1))
+    local selected_folder="${fabric_folders[index]}"
+    local mods_dir="$MC_DIR/$selected_folder/mods"
+    
+    # 二次确认
+    dialog --title "确认操作" \
+           --yesno "确定要为服务器 '$selected_folder' 安装皮肤修复模组吗？\n\n这将下载 CustomSkinLoader 模组到:\n$mods_dir" \
+           12 60
+    
+    if [ $? -ne 0 ]; then
+        return
+    fi
+    
+    # 创建mods目录
+    mkdir -p "$mods_dir"
+    
+    # 下载CustomSkinLoader模组
+    local download_url="https://csl.3-3.dev/mods/CustomSkinLoader_Fabric-14.26.1.jar"
+    local mod_file="$mods_dir/CustomSkinLoader_Fabric-14.26.1.jar"
+    
+    echo "正在下载CustomSkinLoader模组..."
+    if curl -L -o "$mod_file" "$download_url"; then
+        echo "✅ CustomSkinLoader模组下载成功"
+        dialog --title "成功" \
+               --msgbox "✅ CustomSkinLoader模组已成功安装到:\n$mod_file\n\n重启服务器后生效" \
+               10 60
+    else
+        echo "❌ 模组下载失败"
+        dialog --title "错误" \
+               --msgbox "❌ 模组下载失败，请检查网络连接" \
+               10 50
+    fi
+}
+
+# 修复非正版玩家进入服务器
+fix_offline_mode() {
+    clear
+    echo "=================================================="
+    echo "     修复非正版玩家进入服务器"
+    echo "=================================================="
+    echo ""
+    
+    # 查找有server.properties的文件夹
+    local server_folders=()
+    while IFS= read -r -d '' file; do
+        folder_path=$(dirname "$file")
+        folder_name=$(basename "$folder_path")
+        server_folders+=("$folder_name")
+    done < <(find "$MC_DIR" -name "server.properties" -type f -print0 2>/dev/null)
+    
+    if [ ${#server_folders[@]} -eq 0 ]; then
+        echo "❌ 没有找到任何服务器配置文件"
+        echo ""
+        echo "请先安装服务器"
+        read -p "按回车键返回..."
+        return
+    fi
+    
+    # 构建菜单选项
+    local menu_items=()
+    for ((i=0; i<${#server_folders[@]}; i++)); do
+        menu_items+=("$((i+1))" "${server_folders[i]}")
+    done
+    
+    local folder_choice=$(dialog \
+        --title "选择服务器" \
+        --menu "选择要修改的服务器：" \
+        20 60 10 \
+        "${menu_items[@]}" \
+        --stdout)
+    
+    if [ -z "$folder_choice" ]; then
+        return
+    fi
+    
+    local index=$((folder_choice-1))
+    local selected_folder="${server_folders[index]}"
+    local properties_file="$MC_DIR/$selected_folder/server.properties"
+    
+    # 二次确认
+    dialog --title "确认操作" \
+           --yesno "确定要修改服务器 '$selected_folder' 的online-mode设置吗？\n\n这将允许非正版玩家进入服务器\n文件: $properties_file" \
+           12 60
+    
+    if [ $? -ne 0 ]; then
+        return
+    fi
+    
+    # 修改online-mode为false
+    if sed -i 's/^online-mode=.*/online-mode=false/' "$properties_file"; then
+        echo "✅ 已修改online-mode为false"
+        dialog --title "成功" \
+               --msgbox "✅ 服务器 '$selected_folder' 已允许非正版玩家进入\n\nonline-mode已设置为false" \
+               10 60
+    else
+        echo "❌ 修改失败"
+        dialog --title "错误" \
+               --msgbox "❌ 修改server.properties文件失败" \
+               10 50
+    fi
+}
+
+# 修复菜单
+fix_menu() {
+    while true; do
+        choice=$(dialog \
+            --title "修复非正版账号皮肤显示/进入服务器" \
+            --menu "选择修复类型：" \
+            15 50 5 \
+            1 "修复正版账号皮肤显示" \
+            2 "修复非正版玩家进入服务器" \
+            0 "返回主菜单" \
+            --stdout)
+        
+        case $choice in
+            1)
+                fix_skin_display
+                ;;
+            2)
+                fix_offline_mode
+                ;;
+            0)
+                break
+                ;;
+        esac
+    done
+}
+
+# 修改服务器人数
+modify_max_players() {
+    local server_dir="$1"
+    local properties_file="$server_dir/server.properties"
+    
+    # 检查server.properties文件是否存在
+    if [ ! -f "$properties_file" ]; then
+        dialog --title "错误" \
+               --msgbox "❌ 找不到服务器配置文件: $properties_file\n\n请先启动一次服务器以生成配置文件" \
+               10 60
+        return
+    fi
+    
+    # 获取当前人数设置
+    local current_players=$(grep "^max-players=" "$properties_file" 2>/dev/null | cut -d= -f2)
+    if [ -z "$current_players" ]; then
+        current_players="未知"
+    fi
+    
+    while true; do
+        choice=$(dialog \
+            --title "修改服务器人数 - 当前: $current_players" \
+            --menu "选择操作：" \
+            12 45 5 \
+            1 "👥 修改服务器人数" \
+            2 "🔄 恢复初始服务器人数" \
+            0 "返回" \
+            --stdout)
+        
+        case $choice in
+            1)
+                clear
+                echo "=================================================="
+                echo "           修改服务器人数"
+                echo "=================================================="
+                echo ""
+                echo "当前服务器人数限制: $current_players"
+                echo ""
+                
+                while true; do
+                    read -p "请输入新的服务器人数（不低于2人，输入空白取消）: " new_players
+                    
+                    # 检查是否输入空白（取消）
+                    if [ -z "$new_players" ]; then
+                        echo "❌ 已取消修改"
+                        break
+                    fi
+                    
+                    # 检查是否是数字
+                    if ! [[ "$new_players" =~ ^[0-9]+$ ]]; then
+                        echo "❌ 请输入有效的数字！"
+                        continue
+                    fi
+                    
+                    # 检查是否大于等于2
+                    if [ "$new_players" -lt 2 ]; then
+                        echo "❌ 服务器人数不能低于2人！"
+                        continue
+                    fi
+                    
+                    # 修改server.properties
+                    if sed -i "s/^max-players=.*/max-players=$new_players/" "$properties_file"; then
+                        echo "✅ 服务器人数已修改为: $new_players"
+                        current_players=$new_players
+                    else
+                        echo "❌ 修改失败"
+                    fi
+                    break
+                done
+                
+                read -p "按回车键继续..."
+                ;;
+            2)
+                dialog --title "确认恢复" \
+                       --yesno "确定要恢复初始服务器人数(20人)吗？" \
+                       8 40
+                
+                if [ $? -eq 0 ]; then
+                    if sed -i "s/^max-players=.*/max-players=20/" "$properties_file"; then
+                        echo "✅ 服务器人数已恢复为20人"
+                        current_players="20"
+                    else
+                        echo "❌ 恢复失败"
+                    fi
+                    read -p "按回车键继续..."
+                fi
+                ;;
+            0)
+                break
+                ;;
+        esac
+    done
+}
+
+# 修改服务器端口
+modify_server_port() {
+    local server_dir="$1"
+    local properties_file="$server_dir/server.properties"
+    
+    # 检查server.properties文件是否存在
+    if [ ! -f "$properties_file" ]; then
+        dialog --title "错误" \
+               --msgbox "❌ 找不到服务器配置文件: $properties_file\n\n请先启动一次服务器以生成配置文件" \
+               10 60
+        return
+    fi
+    
+    # 获取当前端口设置
+    local current_port=$(grep "^query.port=" "$properties_file" 2>/dev/null | cut -d= -f2)
+    if [ -z "$current_port" ]; then
+        current_port="未知"
+    fi
+    
+    while true; do
+        choice=$(dialog \
+            --title "修改服务器端口 - 当前: $current_port" \
+            --menu "选择操作：" \
+            12 45 5 \
+            1 "🔌 修改服务器端口" \
+            2 "🔄 恢复初始服务器端口" \
+            0 "返回" \
+            --stdout)
+        
+        case $choice in
+            1)
+                clear
+                echo "=================================================="
+                echo "           修改服务器端口"
+                echo "=================================================="
+                echo ""
+                echo "当前服务器端口: $current_port"
+                echo ""
+                
+                while true; do
+                    read -p "请输入新的服务器端口（输入空白取消）: " new_port
+                    
+                    # 检查是否输入空白（取消）
+                    if [ -z "$new_port" ]; then
+                        echo "❌ 已取消修改"
+                        break
+                    fi
+                    
+                    # 检查是否是数字
+                    if ! [[ "$new_port" =~ ^[0-9]+$ ]]; then
+                        echo "❌ 请输入有效的数字！"
+                        continue
+                    fi
+                    
+                    # 检查端口范围
+                    if [ "$new_port" -lt 1 ] || [ "$new_port" -gt 65535 ]; then
+                        echo "❌ 端口范围应为1-65535！"
+                        continue
+                    fi
+                    
+                    # 修改server.properties
+                    if sed -i "s/^query.port=.*/query.port=$new_port/" "$properties_file"; then
+                        echo "✅ 服务器端口已修改为: $new_port"
+                        current_port=$new_port
+                    else
+                        echo "❌ 修改失败"
+                    fi
+                    break
+                done
+                
+                read -p "按回车键继续..."
+                ;;
+            2)
+                dialog --title "确认恢复" \
+                       --yesno "确定要恢复初始服务器端口(25565)吗？" \
+                       8 40
+                
+                if [ $? -eq 0 ]; then
+                    if sed -i "s/^query.port=.*/query.port=25565/" "$properties_file"; then
+                        echo "✅ 服务器端口已恢复为25565"
+                        current_port="25565"
+                    else
+                        echo "❌ 恢复失败"
+                    fi
+                    read -p "按回车键继续..."
+                fi
+                ;;
+            0)
+                break
+                ;;
+        esac
+    done
+}
+
+# 修改服务器名称
+modify_server_name() {
+    local server_dir="$1"
+    local properties_file="$server_dir/server.properties"
+    
+    # 检查server.properties文件是否存在
+    if [ ! -f "$properties_file" ]; then
+        dialog --title "错误" \
+               --msgbox "❌ 找不到服务器配置文件: $properties_file\n\n请先启动一次服务器以生成配置文件" \
+               10 60
+        return
+    fi
+    
+    # 获取当前服务器名称
+    local current_name=$(grep "^motd=" "$properties_file" 2>/dev/null | cut -d= -f2)
+    if [ -z "$current_name" ]; then
+        current_name="未知"
+    fi
+    
+    while true; do
+        choice=$(dialog \
+            --title "修改服务器名称 - 当前: $current_name" \
+            --menu "选择操作：" \
+            12 45 5 \
+            1 "🏷️  修改服务器名称" \
+            2 "🔄 恢复初始服务器名称" \
+            0 "返回" \
+            --stdout)
+        
+        case $choice in
+            1)
+                clear
+                echo "=================================================="
+                echo "           修改服务器名称"
+                echo "=================================================="
+                echo ""
+                echo "当前服务器名称: $current_name"
+                echo ""
+                
+                read -p "请输入新的服务器名称（输入空白取消）: " new_name
+                
+                # 检查是否输入空白（取消）
+                if [ -z "$new_name" ]; then
+                    echo "❌ 已取消修改"
+                else
+                    # 修改server.properties
+                    if sed -i "s/^motd=.*/motd=$new_name/" "$properties_file"; then
+                        echo "✅ 服务器名称已修改为: $new_name"
+                        current_name="$new_name"
+                    else
+                        echo "❌ 修改失败"
+                    fi
+                fi
+                
+                read -p "按回车键继续..."
+                ;;
+            2)
+                dialog --title "确认恢复" \
+                       --yesno "确定要恢复初始服务器名称(A Minecraft Server)吗？" \
+                       8 45
+                
+                if [ $? -eq 0 ]; then
+                    if sed -i "s/^motd=.*/motd=A Minecraft Server/" "$properties_file"; then
+                        echo "✅ 服务器名称已恢复为: A Minecraft Server"
+                        current_name="A Minecraft Server"
+                    else
+                        echo "❌ 恢复失败"
+                    fi
+                    read -p "按回车键继续..."
+                fi
+                ;;
+            0)
+                break
+                ;;
+        esac
+    done
+}
+
+# 服务器设置菜单
+server_settings_menu() {
+    local server_name=$1
+    local server_dir="$MC_DIR/$server_name"
+    local properties_file="$server_dir/server.properties"
+    
+    # 检查server.properties文件是否存在
+    if [ ! -f "$properties_file" ]; then
+        dialog --title "错误" \
+               --msgbox "❌ 找不到服务器配置文件: $properties_file\n\n请先启动一次服务器以生成配置文件" \
+               10 60
+        return
+    fi
+    
+    while true; do
+        choice=$(dialog \
+            --title "服务器设置 - $server_name" \
+            --menu "选择要修改的设置：" \
+            15 50 5 \
+            1 "👥 修改服务器人数" \
+            2 "🔌 修改服务器端口" \
+            3 "🏷️  修改服务器名称" \
+            0 "返回" \
+            --stdout)
+        
+        case $choice in
+            1)
+                modify_max_players "$server_dir"
+                ;;
+            2)
+                modify_server_port "$server_dir"
+                ;;
+            3)
+                modify_server_name "$server_dir"
+                ;;
+            0)
+                break
+                ;;
+        esac
+    done
+}
+
+# 获取服务器列表
+get_server_list() {
+    local servers=()
+    if [ -d "$MC_DIR" ]; then
+        while IFS= read -r -d '' dir; do
+            if [ -f "$dir/server.jar" ]; then
+                server_name=$(basename "$dir")
+                servers+=("$server_name")
+            fi
+        done < <(find "$MC_DIR" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+    fi
+    printf '%s\n' "${servers[@]}"
+}
+
+# 启动服务器
+start_server() {
+    local server_name=$1
+    local server_dir="$MC_DIR/$server_name"
+    
+    clear
+    echo "=================================================="
+    echo "       启动服务器: $server_name"
+    echo "=================================================="
+    echo ""
+    
+    if [ ! -f "$server_dir/server.jar" ]; then
+        echo "❌ 服务器文件不存在: $server_dir/server.jar"
+        read -p "按回车键返回..."
+        return
+    fi
+    
+    echo "服务器目录: $server_dir"
+    echo "正在启动服务器..."
+    echo ""
+    echo "提示: 按 Ctrl+C 停止服务器"
+    echo "=================================================="
+    echo ""
+    
+    cd "$server_dir"
+    java -jar server.jar nogui
+    
+    echo ""
+    echo "=================================================="
+    echo "服务器已停止运行"
+    echo "=================================================="
+    echo ""
+    read -p "按回车键返回..."
+}
+
+# 删除服务器
+delete_server() {
+    local server_name=$1
+    local server_dir="$MC_DIR/$server_name"
+    
+    # 第一次确认
+    dialog --title "确认删除" \
+           --yesno "确定要删除服务器 '$server_name' 吗？\n\n此操作无法撤销！" \
+           10 50
+    
+    if [ $? -ne 0 ]; then
+        return
+    fi
+    
+    # 第二次确认
+    dialog --title "最后确认" \
+           --yesno "⚠️  最后警告！\n\n真的要删除服务器 '$server_name' 吗？\n所有数据都将永久丢失！" \
+           12 50
+    
+    if [ $? -eq 0 ]; then
+        if rm -rf "$server_dir"; then
+            dialog --title "删除成功" \
+                   --msgbox "✅ 服务器 '$server_name' 已成功删除！" \
+                   8 40
+        else
+            dialog --title "删除失败" \
+                   --msgbox "❌ 删除服务器失败，请检查权限" \
+                   8 40
+        fi
+    fi
+}
+
+# 查看服务器占用空间
+check_server_size() {
+    local server_name=$1
+    local server_dir="$MC_DIR/$server_name"
+    
+    if [ -d "$server_dir" ]; then
+        local size=$(du -sh "$server_dir" 2>/dev/null | cut -f1)
+        local file_count=$(find "$server_dir" -type f | wc -l)
+        
+        dialog --title "服务器空间占用" \
+               --msgbox "服务器: $server_name\n\n占用空间: $size\n文件数量: $file_count\n\n目录: $server_dir" \
+               12 50
+    else
+        dialog --title "错误" \
+               --msgbox "❌ 服务器目录不存在: $server_dir" \
+               8 40
+    fi
+}
+
+# 查看服务器日志
+view_server_logs() {
+    local server_name=$1
+    local server_dir="$MC_DIR/$server_name"
+    local logs_dir="$server_dir/logs"
+    
+    if [ ! -d "$logs_dir" ]; then
+        dialog --title "错误" \
+               --msgbox "❌ 日志目录不存在: $logs_dir\n\n服务器可能尚未运行过或没有生成日志。" \
+               10 50
+        return
+    fi
+    
+    # 查找所有.log文件
+    local log_files=()
+    while IFS= read -r -d '' file; do
+        log_files+=("$(basename "$file")" "日志文件")
+    done < <(find "$logs_dir" -name "*.log" -type f -print0 2>/dev/null)
+    
+    if [ ${#log_files[@]} -eq 0 ]; then
+        dialog --title "错误" \
+               --msgbox "❌ 没有找到任何日志文件\n\n目录: $logs_dir" \
+               10 50
+        return
+    fi
+    
+    # 选择日志文件
+    local log_choice=$(dialog \
+        --title "选择日志文件 - $server_name" \
+        --menu "选择要查看的日志文件：" \
+        20 60 10 \
+        "${log_files[@]}" \
+        --stdout)
+    
+    if [ -z "$log_choice" ]; then
+        return
+    fi
+    
+    local log_file="$logs_dir/$log_choice"
+    
+    # 显示日志内容
+    if [ -f "$log_file" ]; then
+        dialog --title "日志内容 - $log_choice" \
+               --textbox "$log_file" \
+               25 80
+    else
+        dialog --title "错误" \
+               --msgbox "❌ 无法读取日志文件: $log_file" \
+               10 50
+    fi
+}
+
+# 服务器管理菜单
+manage_servers() {
+    while true; do
+        # 获取服务器列表
+        servers=($(get_server_list))
+        
+        if [ ${#servers[@]} -eq 0 ]; then
+            dialog --title "服务器管理" \
+                   --msgbox "❌ 没有找到任何服务器\n\n请先安装服务器" \
+                   8 40
+            return
+        fi
+        
+        # 构建菜单选项
+        menu_items=()
+        for ((i=0; i<${#servers[@]}; i++)); do
+            menu_items+=("$((i+1))" "${servers[i]}")
+        done
+        
+        server_choice=$(dialog \
+            --title "选择服务器" \
+            --menu "选择要管理的服务器：" \
+            20 60 10 \
+            "${menu_items[@]}" \
+            --stdout)
+        
+        if [ -z "$server_choice" ]; then
+            break
+        fi
+        
+        # 获取选择的服务器
+        index=$((server_choice-1))
+        selected_server="${servers[index]}"
+        
+        # 服务器操作菜单
+        action_choice=$(dialog \
+            --title "服务器操作 - $selected_server" \
+            --menu "选择要执行的操作：" \
+            17 50 6 \
+            1 "🚀 启动服务器" \
+            2 "🗑️  删除服务器" \
+            3 "📊 查看占用空间" \
+            4 "📋 查看服务器日志" \
+            5 "⚙️  服务器设置" \
+            0 "返回" \
+            --stdout)
+        
+        case $action_choice in
+            1)
+                start_server "$selected_server"
+                ;;
+            2)
+                delete_server "$selected_server"
+                ;;
+            3)
+                check_server_size "$selected_server"
+                ;;
+            4)
+                view_server_logs "$selected_server"
+                ;;
+            5)
+                server_settings_menu "$selected_server"
+                ;;
+            0)
+                break
+                ;;
+        esac
+    done
+}
+
+# 检查JAVA环境函数
+check_java_environment() {
+    clear
+    echo "=================================================="
+    echo "               检查 JAVA 环境"
+    echo "=================================================="
+    echo ""
+    
+    # 检查Java是否安装
+    if command -v java &> /dev/null; then
+        echo "✅ Java 已安装"
+        echo ""
+        
+        # 显示Java版本信息
+        echo "Java 版本信息:"
+        echo "----------------------------------------"
+        java -version 2>&1
+        echo ""
+        
+        # 显示Java安装路径
+        echo "Java 安装路径:"
+        echo "----------------------------------------"
+        which java
+        echo ""
+        
+        # 显示已安装的Java包
+        echo "已安装的Java相关包:"
+        echo "----------------------------------------"
+        pkg list-installed | grep -i openjdk
+        echo ""
+        
+        # 检查JAVA_HOME环境变量
+        echo "JAVA_HOME 环境变量:"
+        echo "----------------------------------------"
+        if [ -n "$JAVA_HOME" ]; then
+            echo "JAVA_HOME=$JAVA_HOME"
+        else
+            echo "JAVA_HOME 未设置"
+        fi
+        echo ""
+        
+    else
+        echo "❌ Java 未安装"
+        echo ""
+        echo "建议安装以下Java版本:"
+        echo "----------------------------------------"
+        echo "pkg install openjdk-17  # 推荐版本"
+        echo "pkg install openjdk-8   # 兼容版本"
+        echo "pkg install openjdk-11  # 稳定版本"
+        echo ""
+    fi
+    
+    # 检查系统架构和兼容性
+    echo "系统信息:"
+    echo "----------------------------------------"
+    echo "架构: $(uname -m)"
+    echo "系统: $(uname -o)"
+    echo "内核: $(uname -r)"
+    echo ""
+    
+    # 检查内存信息
+    echo "内存信息:"
+    echo "----------------------------------------"
+    free -h
+    echo ""
+    
+    # 检查存储空间
+    echo "存储空间:"
+    echo "----------------------------------------"
+    df -h $PREFIX
+    echo ""
+    
+    read -p "按回车键返回菜单..."
+}
+
 # 从Mojang API获取版本列表
 get_minecraft_versions() {
     echo "正在从Mojang API获取版本列表..."
@@ -203,81 +978,6 @@ get_fallback_vanilla_url() {
             return 1
             ;;
     esac
-}
-
-# 检查JAVA环境函数
-check_java_environment() {
-    clear
-    echo "=================================================="
-    echo "               检查 JAVA 环境"
-    echo "=================================================="
-    echo ""
-    
-    # 检查Java是否安装
-    if command -v java &> /dev/null; then
-        echo "✅ Java 已安装"
-        echo ""
-        
-        # 显示Java版本信息
-        echo "Java 版本信息:"
-        echo "----------------------------------------"
-        java -version 2>&1
-        echo ""
-        
-        # 显示Java安装路径
-        echo "Java 安装路径:"
-        echo "----------------------------------------"
-        which java
-        echo ""
-        
-        # 显示已安装的Java包
-        echo "已安装的Java相关包:"
-        echo "----------------------------------------"
-        pkg list-installed | grep -i openjdk
-        echo ""
-        
-        # 检查JAVA_HOME环境变量
-        echo "JAVA_HOME 环境变量:"
-        echo "----------------------------------------"
-        if [ -n "$JAVA_HOME" ]; then
-            echo "JAVA_HOME=$JAVA_HOME"
-        else
-            echo "JAVA_HOME 未设置"
-        fi
-        echo ""
-        
-    else
-        echo "❌ Java 未安装"
-        echo ""
-        echo "建议安装以下Java版本:"
-        echo "----------------------------------------"
-        echo "pkg install openjdk-17  # 推荐版本"
-        echo "pkg install openjdk-8   # 兼容版本"
-        echo "pkg install openjdk-11  # 稳定版本"
-        echo ""
-    fi
-    
-    # 检查系统架构和兼容性
-    echo "系统信息:"
-    echo "----------------------------------------"
-    echo "架构: $(uname -m)"
-    echo "系统: $(uname -o)"
-    echo "内核: $(uname -r)"
-    echo ""
-    
-    # 检查内存信息
-    echo "内存信息:"
-    echo "----------------------------------------"
-    free -h
-    echo ""
-    
-    # 检查存储空间
-    echo "存储空间:"
-    echo "----------------------------------------"
-    df -h $PREFIX
-    echo ""
-    
-    read -p "按回车键返回菜单..."
 }
 
 # 安装原版我的世界服务器
@@ -609,224 +1309,6 @@ EOF
     read -p "按回车键返回菜单..."
 }
 
-# 获取服务器列表
-get_server_list() {
-    local servers=()
-    if [ -d "$MC_DIR" ]; then
-        while IFS= read -r -d '' dir; do
-            if [ -f "$dir/server.jar" ]; then
-                server_name=$(basename "$dir")
-                servers+=("$server_name")
-            fi
-        done < <(find "$MC_DIR" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
-    fi
-    printf '%s\n' "${servers[@]}"
-}
-
-# 启动服务器
-start_server() {
-    local server_name=$1
-    local server_dir="$MC_DIR/$server_name"
-    
-    clear
-    echo "=================================================="
-    echo "       启动服务器: $server_name"
-    echo "=================================================="
-    echo ""
-    
-    if [ ! -f "$server_dir/server.jar" ]; then
-        echo "❌ 服务器文件不存在: $server_dir/server.jar"
-        read -p "按回车键返回..."
-        return
-    fi
-    
-    echo "服务器目录: $server_dir"
-    echo "正在启动服务器..."
-    echo ""
-    echo "提示: 按 Ctrl+C 停止服务器"
-    echo "=================================================="
-    echo ""
-    
-    cd "$server_dir"
-    java -jar server.jar nogui
-    
-    echo ""
-    echo "=================================================="
-    echo "服务器已停止运行"
-    echo "=================================================="
-    echo ""
-    read -p "按回车键返回..."
-}
-
-# 删除服务器
-delete_server() {
-    local server_name=$1
-    local server_dir="$MC_DIR/$server_name"
-    
-    # 第一次确认
-    dialog --title "确认删除" \
-           --yesno "确定要删除服务器 '$server_name' 吗？\n\n此操作无法撤销！" \
-           10 50
-    
-    if [ $? -ne 0 ]; then
-        return
-    fi
-    
-    # 第二次确认
-    dialog --title "最后确认" \
-           --yesno "⚠️  最后警告！\n\n真的要删除服务器 '$server_name' 吗？\n所有数据都将永久丢失！" \
-           12 50
-    
-    if [ $? -eq 0 ]; then
-        if rm -rf "$server_dir"; then
-            dialog --title "删除成功" \
-                   --msgbox "✅ 服务器 '$server_name' 已成功删除！" \
-                   8 40
-        else
-            dialog --title "删除失败" \
-                   --msgbox "❌ 删除服务器失败，请检查权限" \
-                   8 40
-        fi
-    fi
-}
-
-# 查看服务器占用空间
-check_server_size() {
-    local server_name=$1
-    local server_dir="$MC_DIR/$server_name"
-    
-    if [ -d "$server_dir" ]; then
-        local size=$(du -sh "$server_dir" 2>/dev/null | cut -f1)
-        local file_count=$(find "$server_dir" -type f | wc -l)
-        
-        dialog --title "服务器空间占用" \
-               --msgbox "服务器: $server_name\n\n占用空间: $size\n文件数量: $file_count\n\n目录: $server_dir" \
-               12 50
-    else
-        dialog --title "错误" \
-               --msgbox "❌ 服务器目录不存在: $server_dir" \
-               8 40
-    fi
-}
-
-# 查看服务器日志
-view_server_logs() {
-    local server_name=$1
-    local server_dir="$MC_DIR/$server_name"
-    local logs_dir="$server_dir/logs"
-    
-    if [ ! -d "$logs_dir" ]; then
-        dialog --title "错误" \
-               --msgbox "❌ 日志目录不存在: $logs_dir\n\n服务器可能尚未运行过或没有生成日志。" \
-               10 50
-        return
-    fi
-    
-    # 查找所有.log文件
-    local log_files=()
-    while IFS= read -r -d '' file; do
-        log_files+=("$(basename "$file")" "日志文件")
-    done < <(find "$logs_dir" -name "*.log" -type f -print0 2>/dev/null)
-    
-    if [ ${#log_files[@]} -eq 0 ]; then
-        dialog --title "错误" \
-               --msgbox "❌ 没有找到任何日志文件\n\n目录: $logs_dir" \
-               10 50
-        return
-    fi
-    
-    # 选择日志文件
-    local log_choice=$(dialog \
-        --title "选择日志文件 - $server_name" \
-        --menu "选择要查看的日志文件：" \
-        20 60 10 \
-        "${log_files[@]}" \
-        --stdout)
-    
-    if [ -z "$log_choice" ]; then
-        return
-    fi
-    
-    local log_file="$logs_dir/$log_choice"
-    
-    # 显示日志内容
-    if [ -f "$log_file" ]; then
-        dialog --title "日志内容 - $log_choice" \
-               --textbox "$log_file" \
-               25 80
-    else
-        dialog --title "错误" \
-               --msgbox "❌ 无法读取日志文件: $log_file" \
-               10 50
-    fi
-}
-
-# 服务器管理菜单
-manage_servers() {
-    while true; do
-        # 获取服务器列表
-        servers=($(get_server_list))
-        
-        if [ ${#servers[@]} -eq 0 ]; then
-            dialog --title "服务器管理" \
-                   --msgbox "❌ 没有找到任何服务器\n\n请先安装服务器" \
-                   8 40
-            return
-        fi
-        
-        # 构建菜单选项
-        menu_items=()
-        for ((i=0; i<${#servers[@]}; i++)); do
-            menu_items+=("$((i+1))" "${servers[i]}")
-        done
-        
-        server_choice=$(dialog \
-            --title "选择服务器" \
-            --menu "选择要管理的服务器：" \
-            20 60 10 \
-            "${menu_items[@]}" \
-            --stdout)
-        
-        if [ -z "$server_choice" ]; then
-            break
-        fi
-        
-        # 获取选择的服务器
-        index=$((server_choice-1))
-        selected_server="${servers[index]}"
-        
-        # 服务器操作菜单
-        action_choice=$(dialog \
-            --title "服务器操作 - $selected_server" \
-            --menu "选择要执行的操作：" \
-            17 45 5 \
-            1 "🚀 启动服务器" \
-            2 "🗑️  删除服务器" \
-            3 "📊 查看占用空间" \
-            4 "📋 查看服务器日志" \
-            0 "返回" \
-            --stdout)
-        
-        case $action_choice in
-            1)
-                start_server "$selected_server"
-                ;;
-            2)
-                delete_server "$selected_server"
-                ;;
-            3)
-                check_server_size "$selected_server"
-                ;;
-            4)
-                view_server_logs "$selected_server"
-                ;;
-            0)
-                break
-                ;;
-        esac
-    done
-}
-
 # 安装我的世界服务器主菜单
 install_minecraft_server_menu() {
     while true; do
@@ -978,11 +1460,12 @@ while true; do
     choice=$(dialog \
         --title "我的世界服务器管理器" \
         --menu "选择操作：" \
-        17 50 8 \
+        17 50 9 \
         1 "安装我的世界服务器环境" \
         2 "检查JAVA环境" \
         3 "安装我的世界服务器" \
         4 "启动/管理服务器" \
+        5 "修复非正版账号皮肤显示/进入服务器" \
         0 "退出程序" \
         --stdout)
     
@@ -998,6 +1481,9 @@ while true; do
             ;;
         4)
             manage_servers
+            ;;
+        5)
+            fix_menu
             ;;
         0)
             clear
