@@ -4,7 +4,7 @@ The English version is below.
 
 中国:
 
-git clone https://gitclone.com/github.com/Wang-Anyi/mc-server-tool.git
+git clone https://gh.927223.xyz/github.com/Wang-Anyi/mc-server-tool.git
 
 然后再输入
 
@@ -18,10 +18,10 @@ Download Termux on your phone, then enter    pkg install git -y    , and then ch
 
 International:
 
-`git clone https://ghfast.top/https://github.com/Wang-Anyi/mc-server-tool.git`
-
 `https://github.com/Wang-Anyi/mc-server-tool.git`
 
-Then enter:`bash ~/mc-server-tool/mc-server-tool_en.sh`
+Then enter:
+
+`bash ~/mc-server-tool/mc-server-tool_en.sh`
 
 Wait a moment and you can use it. The next time you start, use the same command (`bash ~/mc-server-tool/mc-server-tool_en.sh`).
